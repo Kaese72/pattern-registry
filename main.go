@@ -150,7 +150,7 @@ func init() {
 	viper.BindEnv("database.user")
 	viper.BindEnv("database.password")
 	viper.BindEnv("database.database")
-	viper.SetDefault("database.database", "patternengine")
+	viper.SetDefault("database.database", "patternregistry")
 
 	// JWT configuration
 	viper.BindEnv("jwt.secret")
