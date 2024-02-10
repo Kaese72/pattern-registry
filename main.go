@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	registryModels "github.com/Kaese72/pattern-pattern/registry/models"
+	registryModels "github.com/Kaese72/pattern-registry/registry/models"
 	"github.com/dgrijalva/jwt-go"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
