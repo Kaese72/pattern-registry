@@ -1,0 +1,2 @@
+ALTER TABLE patterns ADD COLUMN owner INT NOT NULL;
+ALTER TABLE patterns ADD COLUMN version INT NOT NULL;
