@@ -42,13 +42,14 @@ func (app application) readPatterns(w http.ResponseWriter, r *http.Request) {
 
 
 func (app application) createPattern(w http.ResponseWriter, r *http.Request) {
+	organizationId := r.Context().Value(organizationIDKey).(float64)
 	inputPattern := registryModels.RegistryPattern{}
 	if err := json.NewDecoder(r.Body).Decode(&inputPattern); err != nil {
 		http.Error(w, fmt.Sprintf("Error decoding request: %s", err.Error()), http.StatusBadRequest)
 		log.Print(err.Error())
 		return
 	}
-	pettern, err := registryModels.DBInsertRegistryPattern(app.db, inputPattern)
+	pettern, err := registryModels.DBInsertRegistryPattern(app.db, inputPattern, int(organizationId))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error from database: %s", err.Error()), http.StatusInternalServerError)
 		log.Print(err.Error())
@@ -198,12 +199,12 @@ func main() {
 	}
 
 	router := mux.NewRouter()
-	router.Use(app.authMiddleware)
+	autenticatedRouter := router.PathPrefix("/").Subrouter()
+	autenticatedRouter.Use(app.authMiddleware)
 
 	router.HandleFunc("/patterns", app.readPatterns).Methods("GET")
 	// router.HandleFunc("/patterns/{id:[0-9]+}", app.readPattern).Methods("GET")
-	router.HandleFunc("/patterns", app.createPattern).Methods("POST")
+	autenticatedRouter.HandleFunc("/patterns", app.createPattern).Methods("POST")
 	// router.HandleFunc("/patterns/{id:[0-9]+}", app.updatePattern).Methods("POST")
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", Loaded.Listen.Host, Loaded.Listen.Port), router))
 }
-

@@ -25,9 +25,9 @@ func DBReadRegistryPattern(db *sql.DB, id int) ([]RegistryPattern, error) {
 	return patterns, err
 }
 
-func DBInsertRegistryPattern(db *sql.DB, inputPattern RegistryPattern) (RegistryPattern, error) {
+func DBInsertRegistryPattern(db *sql.DB, inputPattern RegistryPattern, owner int) (RegistryPattern, error) {
 	resPatterns := []RegistryPattern{}
-	result, err := db.Query(`INSERT INTO patterns (pattern, component, owner, version) VALUES (?, ?, 1, 1) RETURNING *`, inputPattern.Pattern.Pattern, inputPattern.Pattern.Component)
+	result, err := db.Query(`INSERT INTO patterns (pattern, component, owner, version) VALUES (?, ?, ?, 1) RETURNING *`, inputPattern.Pattern.Pattern, inputPattern.Pattern.Component, owner)
 	if err != nil {
 		return RegistryPattern{}, err
 	}
