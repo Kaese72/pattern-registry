@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/Kaese72/pattern-registry/registry/models"
 	"github.com/georgysavva/scany/v2/sqlscan"
@@ -26,6 +27,12 @@ func DBInsertRegistryPattern(db *sql.DB, inputPattern models.RegistryPattern, ow
 	if err != nil {
 		return models.RegistryPattern{}, err
 	}
-	sqlscan.ScanAll(&resPatterns, result)
-	return resPatterns[0], err
+	err = sqlscan.ScanAll(&resPatterns, result)
+	if err != nil {
+		return models.RegistryPattern{}, err
+	}
+	if len(resPatterns) == 0 {
+		return models.RegistryPattern{}, errors.New("no pattern returned from insert")
+	}
+	return resPatterns[0], nil
 }
