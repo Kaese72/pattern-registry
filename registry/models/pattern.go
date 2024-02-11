@@ -48,6 +48,7 @@ func (p Pattern) MatchBytes(s []byte) []PatternMatch {
 			if name == "version" {
 				version = match[i]
 			}
+		}
 	}
 	return []PatternMatch{
 		{
