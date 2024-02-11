@@ -38,11 +38,16 @@ func (p *Pattern) Compile() error {
 
 func (p Pattern) MatchBytes(s []byte) []PatternMatch {
 	match := p.compiledPattern.FindSubmatch(s)
+	if len(match) == 0 {
+		// No match
+		return []PatternMatch{}
+	}
 	version := []byte{}
 	for i, name := range p.compiledPattern.SubexpNames() {
-		if name == "version" {
-			version = match[i]
-		}
+		if i > 0 && i <= len(match) {
+			if name == "version" {
+				version = match[i]
+			}
 	}
 	return []PatternMatch{
 		{
