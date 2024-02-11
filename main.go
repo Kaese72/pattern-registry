@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Kaese72/pattern-registry/internal/database"
+
 	registryModels "github.com/Kaese72/pattern-registry/registry/models"
 	"github.com/dgrijalva/jwt-go"
 	_ "github.com/go-sql-driver/mysql"
@@ -22,7 +24,7 @@ type application struct {
 }
 
 func (app application) readPatterns(w http.ResponseWriter, r *http.Request) {
-	patterns, err := registryModels.DBReadRegistryPatterns(app.db)
+	patterns, err := database.DBReadRegistryPatterns(app.db)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error from database: %s", err.Error()), http.StatusInternalServerError)
 		log.Print(err.Error())
@@ -49,7 +51,7 @@ func (app application) createPattern(w http.ResponseWriter, r *http.Request) {
 		log.Print(err.Error())
 		return
 	}
-	pettern, err := registryModels.DBInsertRegistryPattern(app.db, inputPattern, int(organizationId))
+	pettern, err := database.DBInsertRegistryPattern(app.db, inputPattern, int(organizationId))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error from database: %s", err.Error()), http.StatusInternalServerError)
 		log.Print(err.Error())
