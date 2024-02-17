@@ -44,17 +44,9 @@ func DBInsertRegistryPattern(db *sql.DB, inputPattern models.RegistryPattern, ow
 }
 
 func DBUpdateRegistryPattern(db *sql.DB, inputPattern models.Pattern, owner int, id int) (models.RegistryPattern, error) {
-	resPatterns := []models.RegistryPattern{}
-	result, err := db.Query(`UPDATE patterns SET pattern = ? WHERE id = ? RETURNING *`, inputPattern.Pattern, id)
+	_, err := db.Exec(`UPDATE patterns SET pattern = ? WHERE id = ?`, inputPattern.Pattern, id)
 	if err != nil {
 		return models.RegistryPattern{}, err
 	}
-	err = sqlscan.ScanAll(&resPatterns, result)
-	if err != nil {
-		return models.RegistryPattern{}, err
-	}
-	if len(resPatterns) == 0 {
-		return models.RegistryPattern{}, errors.New("no pattern returned from insert")
-	}
-	return resPatterns[0], nil
+	return DBReadRegistryPattern(db, id)
 }
