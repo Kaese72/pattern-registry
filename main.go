@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/Kaese72/pattern-registry/internal/database"
@@ -19,7 +20,7 @@ import (
 )
 
 type application struct {
-	db *sql.DB
+	db        *sql.DB
 	jwtSecret string
 }
 
@@ -33,7 +34,7 @@ func (app application) readPatterns(w http.ResponseWriter, r *http.Request) {
 
 	// Write JSON response
 	w.Header().Set("Content-Type", "application/json")
-	encoder :=  json.NewEncoder(w)
+	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "   ")
 	if err := encoder.Encode(patterns); err != nil {
 		http.Error(w, fmt.Sprintf("Error encoding response: %s", err.Error()), http.StatusInternalServerError)
@@ -41,7 +42,6 @@ func (app application) readPatterns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
-
 
 func (app application) createPattern(w http.ResponseWriter, r *http.Request) {
 	organizationId := r.Context().Value(organizationIDKey).(float64)
@@ -60,9 +60,51 @@ func (app application) createPattern(w http.ResponseWriter, r *http.Request) {
 
 	// Write JSON response
 	w.Header().Set("Content-Type", "application/json")
-	encoder :=  json.NewEncoder(w)
+	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "   ")
 	if err := encoder.Encode(pettern); err != nil {
+		http.Error(w, fmt.Sprintf("Error encoding response: %s", err.Error()), http.StatusInternalServerError)
+		log.Print(err.Error())
+		return
+	}
+}
+
+func (app application) updatePattern(w http.ResponseWriter, r *http.Request) {
+	organizationId := r.Context().Value(organizationIDKey).(float64)
+	inputPattern := registryModels.Pattern{}
+	if err := json.NewDecoder(r.Body).Decode(&inputPattern); err != nil {
+		http.Error(w, fmt.Sprintf("Error decoding request: %s", err.Error()), http.StatusBadRequest)
+		return
+	}
+	if inputPattern.Component != "" {
+		http.Error(w, "Component may not be updated post-create", http.StatusBadRequest)
+		return
+	}
+
+	vars := mux.Vars(r)
+	id, _ := strconv.Atoi(vars["id"])
+	presentPattern, err := database.DBReadRegistryPattern(app.db, id)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error from database: %s", err.Error()), http.StatusInternalServerError)
+		log.Print(err.Error())
+		return
+	}
+	if presentPattern.Owner != int(organizationId) {
+		http.Error(w, "Unauthorized. May only update patterns owned by your organization", http.StatusForbidden)
+		return
+	}
+	pattern, err := database.DBUpdateRegistryPattern(app.db, inputPattern, int(organizationId), id)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error from database: %s", err.Error()), http.StatusInternalServerError)
+		log.Print(err.Error())
+		return
+	}
+
+	// Write JSON response
+	w.Header().Set("Content-Type", "application/json")
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "   ")
+	if err := encoder.Encode(pattern); err != nil {
 		http.Error(w, fmt.Sprintf("Error encoding response: %s", err.Error()), http.StatusInternalServerError)
 		log.Print(err.Error())
 		return
@@ -76,38 +118,38 @@ const (
 	organizationIDKey contextKey = "organizationID"
 )
 
-func (app application)authMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        tokenString := r.Header.Get("Authorization")
-        if tokenString == "" {
-            w.WriteHeader(http.StatusUnauthorized)
-            return
-        }
+func (app application) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokenString := r.Header.Get("Authorization")
+		if tokenString == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 
-        tokenString = strings.Replace(tokenString, "Bearer ", "", 1)
+		tokenString = strings.Replace(tokenString, "Bearer ", "", 1)
 
-        token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-            if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-                return nil, fmt.Errorf("unexpected signing method")
-            }
-            return []byte(app.jwtSecret), nil
-        })
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method")
+			}
+			return []byte(app.jwtSecret), nil
+		})
 
-        if err != nil {
-            w.WriteHeader(http.StatusUnauthorized)
-            return
-        }
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 
-        if !token.Valid {
-            w.WriteHeader(http.StatusUnauthorized)
-            return
-        }
+		if !token.Valid {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 
-        claims, ok := token.Claims.(jwt.MapClaims)
-        if !ok {
-            w.WriteHeader(http.StatusUnauthorized)
-            return
-        }
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 
 		userID, ok := claims[string(userIDKey)].(float64)
 		if !ok {
@@ -142,6 +184,7 @@ type Config struct {
 		Port int    `mapstructure:"port"`
 	} `mapstructure:"listen"`
 }
+
 var Loaded Config
 
 func init() {
@@ -186,17 +229,15 @@ func init() {
 	}
 }
 
-
-
 func main() {
 	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", Loaded.Database.User, Loaded.Database.Password, Loaded.Database.Host, Loaded.Database.Port, Loaded.Database.Database))
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer db.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 
 	app := application{
-		db: db,
+		db:        db,
 		jwtSecret: Loaded.JWT.Secret,
 	}
 
@@ -207,6 +248,6 @@ func main() {
 	router.HandleFunc("/patterns", app.readPatterns).Methods("GET")
 	// router.HandleFunc("/patterns/{id:[0-9]+}", app.readPattern).Methods("GET")
 	autenticatedRouter.HandleFunc("/patterns", app.createPattern).Methods("POST")
-	// router.HandleFunc("/patterns/{id:[0-9]+}", app.updatePattern).Methods("POST")
+	autenticatedRouter.HandleFunc("/patterns/{id:[0-9]+}", app.updatePattern).Methods("POST")
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", Loaded.Listen.Host, Loaded.Listen.Port), router))
 }
