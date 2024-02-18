@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/Kaese72/pattern-registry/apierrors"
 	"github.com/Kaese72/pattern-registry/internal/database"
 
 	registryModels "github.com/Kaese72/pattern-registry/registry/models"
@@ -24,11 +26,35 @@ type application struct {
 	jwtSecret string
 }
 
+func terminalHTTPError(w http.ResponseWriter, err error) {
+	var apiError apierrors.APIError
+	if errors.As(err, &apiError) {
+		if apiError.Code == 500 {
+			// When an unknown error occurs, do not send the error to the client
+			http.Error(w, "Internal Server Error", apiError.Code)
+			log.Print(err.Error())
+			return
+
+		} else {
+			bytes, intErr := json.MarshalIndent(apiError, "", "   ")
+			if intErr != nil {
+				// Must send a normal Error an not APIError just in case of eternal loop
+				terminalHTTPError(w, fmt.Errorf("error encoding response: %s", intErr.Error()))
+				return
+			}
+			http.Error(w, string(bytes), apiError.Code)
+			return
+		}
+	} else {
+		terminalHTTPError(w, apierrors.APIError{Code: http.StatusInternalServerError, WrappedError: err})
+		return
+	}
+}
+
 func (app application) readPatterns(w http.ResponseWriter, r *http.Request) {
 	patterns, err := database.DBReadRegistryPatterns(app.db)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error from database: %s", err.Error()), http.StatusInternalServerError)
-		log.Print(err.Error())
+		terminalHTTPError(w, fmt.Errorf("error from database: %s", err.Error()))
 		return
 	}
 
@@ -37,8 +63,7 @@ func (app application) readPatterns(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "   ")
 	if err := encoder.Encode(patterns); err != nil {
-		http.Error(w, fmt.Sprintf("Error encoding response: %s", err.Error()), http.StatusInternalServerError)
-		log.Print(err.Error())
+		terminalHTTPError(w, fmt.Errorf("error encoding response: %s", err.Error()))
 		return
 	}
 }
@@ -47,14 +72,12 @@ func (app application) createPattern(w http.ResponseWriter, r *http.Request) {
 	organizationId := r.Context().Value(organizationIDKey).(float64)
 	inputPattern := registryModels.RegistryPattern{}
 	if err := json.NewDecoder(r.Body).Decode(&inputPattern); err != nil {
-		http.Error(w, fmt.Sprintf("Error decoding request: %s", err.Error()), http.StatusBadRequest)
-		log.Print(err.Error())
+		terminalHTTPError(w, fmt.Errorf("error decoding request: %s", err.Error()))
 		return
 	}
 	pettern, err := database.DBInsertRegistryPattern(app.db, inputPattern, int(organizationId))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error from database: %s", err.Error()), http.StatusInternalServerError)
-		log.Print(err.Error())
+		terminalHTTPError(w, fmt.Errorf("error from database: %s", err.Error()))
 		return
 	}
 
@@ -63,8 +86,7 @@ func (app application) createPattern(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "   ")
 	if err := encoder.Encode(pettern); err != nil {
-		http.Error(w, fmt.Sprintf("Error encoding response: %s", err.Error()), http.StatusInternalServerError)
-		log.Print(err.Error())
+		terminalHTTPError(w, fmt.Errorf("error encoding response: %s", err.Error()))
 		return
 	}
 }
@@ -73,30 +95,28 @@ func (app application) updatePattern(w http.ResponseWriter, r *http.Request) {
 	organizationId := r.Context().Value(organizationIDKey).(float64)
 	inputPattern := registryModels.Pattern{}
 	if err := json.NewDecoder(r.Body).Decode(&inputPattern); err != nil {
-		http.Error(w, fmt.Sprintf("Error decoding request: %s", err.Error()), http.StatusBadRequest)
+		terminalHTTPError(w, fmt.Errorf("error decoding request: %s", err.Error()))
 		return
 	}
 	if inputPattern.Component != "" {
-		http.Error(w, "Component may not be updated post-create", http.StatusBadRequest)
+		terminalHTTPError(w, fmt.Errorf("component may not be updated post-create"))
 		return
 	}
 
 	vars := mux.Vars(r)
-	id, _ := strconv.Atoi(vars["id"])
+	id, _ := strconv.Atoi(vars["id"]) // Ignoring error because mux guarantees this is an int
 	presentPattern, err := database.DBReadRegistryPattern(app.db, id)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error from database: %s", err.Error()), http.StatusInternalServerError)
-		log.Print(err.Error())
+		terminalHTTPError(w, fmt.Errorf("error from database: %s", err.Error()))
 		return
 	}
 	if presentPattern.Owner != int(organizationId) {
-		http.Error(w, "Unauthorized. May only update patterns owned by your organization", http.StatusForbidden)
+		terminalHTTPError(w, fmt.Errorf("unauthorized. May only update patterns owned by your organization"))
 		return
 	}
 	pattern, err := database.DBUpdateRegistryPattern(app.db, inputPattern, int(organizationId), id)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error from database: %s", err.Error()), http.StatusInternalServerError)
-		log.Print(err.Error())
+		terminalHTTPError(w, fmt.Errorf("error from database: %s", err.Error()))
 		return
 	}
 
@@ -105,8 +125,27 @@ func (app application) updatePattern(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "   ")
 	if err := encoder.Encode(pattern); err != nil {
-		http.Error(w, fmt.Sprintf("Error encoding response: %s", err.Error()), http.StatusInternalServerError)
-		log.Print(err.Error())
+		terminalHTTPError(w, fmt.Errorf("error encoding response: %s", err.Error()))
+		return
+	}
+}
+
+func (app application) deletePattern(w http.ResponseWriter, r *http.Request) {
+	organizationId := r.Context().Value(organizationIDKey).(float64)
+	vars := mux.Vars(r)
+	id, _ := strconv.Atoi(vars["id"]) // Ignoring error because mux guarantees this is an int
+	presentPattern, err := database.DBReadRegistryPattern(app.db, id)
+	if err != nil {
+		terminalHTTPError(w, fmt.Errorf("error from database: %s", err.Error()))
+		return
+	}
+	if presentPattern.Owner != int(organizationId) {
+		terminalHTTPError(w, fmt.Errorf("unauthorized. May only delete patterns owned by your organization"))
+		return
+	}
+	err = database.DBDeleteRegistryPattern(app.db, id)
+	if err != nil {
+		terminalHTTPError(w, fmt.Errorf("error from database: %s", err.Error()))
 		return
 	}
 }
@@ -136,29 +175,29 @@ func (app application) authMiddleware(next http.Handler) http.Handler {
 		})
 
 		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
+			terminalHTTPError(w, apierrors.APIError{Code: http.StatusUnauthorized, WrappedError: fmt.Errorf("error parsing token: %s", err.Error())})
 			return
 		}
 
 		if !token.Valid {
-			w.WriteHeader(http.StatusUnauthorized)
+			terminalHTTPError(w, apierrors.APIError{Code: http.StatusUnauthorized, WrappedError: errors.New("invalid token")})
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			w.WriteHeader(http.StatusUnauthorized)
+			terminalHTTPError(w, apierrors.APIError{Code: http.StatusUnauthorized, WrappedError: errors.New("could not read claims")})
 			return
 		}
 
 		userID, ok := claims[string(userIDKey)].(float64)
 		if !ok {
-			w.WriteHeader(http.StatusUnauthorized)
+			terminalHTTPError(w, apierrors.APIError{Code: http.StatusUnauthorized, WrappedError: errors.New("could not read userId claim")})
 			return
 		}
 		organizationID, ok := claims[string(organizationIDKey)].(float64)
 		if !ok {
-			w.WriteHeader(http.StatusUnauthorized)
+			terminalHTTPError(w, apierrors.APIError{Code: http.StatusUnauthorized, WrappedError: errors.New("could not read organizationId claim")})
 			return
 		}
 
@@ -249,5 +288,6 @@ func main() {
 	// router.HandleFunc("/patterns/{id:[0-9]+}", app.readPattern).Methods("GET")
 	autenticatedRouter.HandleFunc("/patterns", app.createPattern).Methods("POST")
 	autenticatedRouter.HandleFunc("/patterns/{id:[0-9]+}", app.updatePattern).Methods("POST")
+	autenticatedRouter.HandleFunc("/patterns/{id:[0-9]+}", app.deletePattern).Methods("DELETE")
 	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:%d", Loaded.Listen.Host, Loaded.Listen.Port), router))
 }

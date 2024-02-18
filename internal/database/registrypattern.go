@@ -50,3 +50,8 @@ func DBUpdateRegistryPattern(db *sql.DB, inputPattern models.Pattern, owner int,
 	}
 	return DBReadRegistryPattern(db, id)
 }
+
+func DBDeleteRegistryPattern(db *sql.DB, id int) error {
+	_, err := db.Exec(`DELETE FROM patterns WHERE id = ?`, id)
+	return err
+}
