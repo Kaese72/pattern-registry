@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -51,8 +52,24 @@ func terminalHTTPError(w http.ResponseWriter, err error) {
 	}
 }
 
+var queryRegex = regexp.MustCompile(`^(?P<key>\w+)\[(?P<operator>\w+)\]$`)
+
+func parseQueryFilters(r *http.Request) []database.Filter {
+	filters := []database.Filter{}
+	for key, values := range r.URL.Query() {
+		matches := queryRegex.FindStringSubmatch(key)
+		if len(matches) == 0 {
+			continue
+		}
+		for _, value := range values {
+			filters = append(filters, database.Filter{Key: matches[queryRegex.SubexpIndex("key")], Value: value, Operator: matches[queryRegex.SubexpIndex("operator")]})
+		}
+	}
+	return filters
+}
+
 func (app application) readPatterns(w http.ResponseWriter, r *http.Request) {
-	patterns, err := database.DBReadRegistryPatterns(app.db)
+	patterns, err := database.DBReadRegistryPatterns(app.db, parseQueryFilters(r))
 	if err != nil {
 		terminalHTTPError(w, fmt.Errorf("error from database: %s", err.Error()))
 		return
