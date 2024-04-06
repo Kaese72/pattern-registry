@@ -297,7 +297,8 @@ func main() {
 		jwtSecret: Loaded.JWT.Secret,
 	}
 
-	router := mux.NewRouter()
+	// pattern-registry is the API identifier for this API
+	router := mux.NewRouter().PathPrefix("/pattern-registry").Subrouter()
 	autenticatedRouter := router.PathPrefix("/").Subrouter()
 	autenticatedRouter.Use(app.authMiddleware)
 

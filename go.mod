@@ -9,7 +9,6 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/georgysavva/scany/v2 v2.1.0
 	github.com/go-sql-driver/mysql v1.7.1
-	github.com/google/uuid v1.5.0
 	github.com/gorilla/mux v1.8.1
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
